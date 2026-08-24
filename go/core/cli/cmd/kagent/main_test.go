@@ -1,12 +1,12 @@
 package main
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/kagent-dev/kagent/go/core/cli"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/config"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -61,7 +61,7 @@ func TestRootCommandUsesConfigValuesAsFlagDefaults(t *testing.T) {
 		Timeout:              45 * time.Second,
 	}
 
-	rootCmd := newRootCommand(context.Background(), cfg)
+	rootCmd := cli.New(cfg)
 
 	assert.Equal(t, "http://kagent.example.test", rootCmd.PersistentFlags().Lookup("kagent-url").DefValue)
 	assert.Equal(t, "grpc.kagent.example.test:443", rootCmd.PersistentFlags().Lookup("kagent-grpc-url").DefValue)
@@ -105,7 +105,7 @@ func TestRootCommandFlagsOverrideConfigValues(t *testing.T) {
 		Timeout:       45 * time.Second,
 	}
 
-	rootCmd := newRootCommand(context.Background(), cfg)
+	rootCmd := cli.New(cfg)
 	require.NoError(t, rootCmd.ParseFlags([]string{
 		"--kagent-url", "http://flag.example.test",
 		"--kagent-grpc-url", "grpc.flag.example.test:8443",
