@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	agentcli "github.com/kagent-dev/kagent/go/core/cli/internal/cli/agent"
@@ -27,8 +28,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// New creates a fresh kagent root command from cfg.
-func New(cfg *config.Config) *cobra.Command {
+// Config configures the kagent command tree.
+type Config struct {
+	// Runtime holds kagent's transport and output settings. Required.
+	Runtime *config.Config
+	// ExtraCommands are added to the root command.
+	ExtraCommands []*cobra.Command
+	// Disabled contains space-separated command paths to omit, such as "get session".
+	Disabled []string
+}
+
+// LoadConfig loads kagent's runtime configuration from its file and environment.
+func LoadConfig() (*config.Config, error) {
+	if err := config.Init(); err != nil {
+		return nil, err
+	}
+	return config.Get()
+}
+
+// New creates a fresh kagent root command from options.
+func New(options Config) *cobra.Command {
+	cfg := options.Runtime
+	if cfg == nil {
+		panic("cli.New: Runtime is required")
+	}
 	rootCmd := &cobra.Command{
 		Use:           "kagent",
 		Short:         "kagent is a CLI and TUI for kagent",
@@ -426,8 +449,39 @@ Examples:
 	runCmd.Flags().BoolVar(&runCfg.Build, "build", false, "Rebuild the Docker image before running")
 
 	rootCmd.AddCommand(installCmd, uninstallCmd, invokeCmd, bugReportCmd, versionCmd, dashboardCmd, getCmd, createCmd, initCmd, buildCmd, deployCmd, addMcpCmd, runCmd, mcp.NewMCPCmd(), envdoc.NewEnvCmd(), dbcli.NewCommandFromFunc(migrationSources(cfg)))
+	for _, command := range options.ExtraCommands {
+		if command != nil {
+			rootCmd.AddCommand(command)
+		}
+	}
+	removeDisabled(rootCmd, options.Disabled)
 
 	return rootCmd
+}
+
+// removeDisabled drops each space-separated command path from the tree.
+func removeDisabled(root *cobra.Command, paths []string) {
+	for _, path := range paths {
+		parts := strings.Fields(path)
+		parent := root
+		for index, name := range parts {
+			var match *cobra.Command
+			for _, command := range parent.Commands() {
+				if command.Name() == name {
+					match = command
+					break
+				}
+			}
+			if match == nil {
+				break
+			}
+			if index == len(parts)-1 {
+				parent.RemoveCommand(match)
+				break
+			}
+			parent = match
+		}
+	}
 }
 
 // vectorEnabledKey names two lookups that deliberately share it: the CLI's

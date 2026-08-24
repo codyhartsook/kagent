@@ -34,7 +34,7 @@ verbose: true
 timeout: 45s
 `), 0600))
 
-	cfg, err := loadConfig()
+	cfg, err := cli.LoadConfig()
 	require.NoError(t, err)
 
 	assert.Equal(t, "http://kagent.example.test", cfg.KAgentURL)
@@ -61,7 +61,7 @@ func TestRootCommandUsesConfigValuesAsFlagDefaults(t *testing.T) {
 		Timeout:              45 * time.Second,
 	}
 
-	rootCmd := cli.New(cfg)
+	rootCmd := cli.New(cli.Config{Runtime: cfg})
 
 	assert.Equal(t, "http://kagent.example.test", rootCmd.PersistentFlags().Lookup("kagent-url").DefValue)
 	assert.Equal(t, "grpc.kagent.example.test:443", rootCmd.PersistentFlags().Lookup("kagent-grpc-url").DefValue)
@@ -89,7 +89,7 @@ func TestLoadConfigReadsAgentEnvironment(t *testing.T) {
 	t.Setenv("KAGENT_OUTPUT_FORMAT", "agent")
 	t.Setenv("USER_ID", "automation@kagent.dev")
 
-	cfg, err := loadConfig()
+	cfg, err := cli.LoadConfig()
 	require.NoError(t, err)
 	assert.Equal(t, "agent", cfg.OutputFormat)
 	assert.Equal(t, "automation@kagent.dev", cfg.UserID)
@@ -105,7 +105,7 @@ func TestRootCommandFlagsOverrideConfigValues(t *testing.T) {
 		Timeout:       45 * time.Second,
 	}
 
-	rootCmd := cli.New(cfg)
+	rootCmd := cli.New(cli.Config{Runtime: cfg})
 	require.NoError(t, rootCmd.ParseFlags([]string{
 		"--kagent-url", "http://flag.example.test",
 		"--kagent-grpc-url", "grpc.flag.example.test:8443",
