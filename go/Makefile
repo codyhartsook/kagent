@@ -80,7 +80,7 @@ $(KAL_SO):
 	@rm -rf $(LOCALBIN)/golangci-lint-src
 	@git clone --depth 1 --branch $(GOLANGCI_LINT_VERSION) --quiet https://github.com/golangci/golangci-lint.git $(LOCALBIN)/golangci-lint-src
 	@cd $(LOCALBIN)/golangci-lint-src && go get sigs.k8s.io/kube-api-linter@$(KAL_VERSION)
-	@cd $(LOCALBIN)/golangci-lint-src && go build -buildmode=plugin -o $(KAL_SO) sigs.k8s.io/kube-api-linter/pkg/plugin
+	@cd $(LOCALBIN)/golangci-lint-src && GOTOOLCHAIN=$(shell go env GOVERSION) go build -buildmode=plugin -o $(KAL_SO) sigs.k8s.io/kube-api-linter/pkg/plugin
 	@rm -rf $(LOCALBIN)/golangci-lint-src
 
 .PHONY: govulncheck
