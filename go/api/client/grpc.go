@@ -55,8 +55,7 @@ func WithGRPCTarget(target string) ClientOption {
 	}
 }
 
-// WithGRPCTimeout sets the default deadline applied when a context has no
-// earlier deadline. A non-positive duration disables the default deadline.
+// WithGRPCTimeout sets the default unary deadline when a context has no earlier deadline.
 func WithGRPCTimeout(timeout time.Duration) ClientOption {
 	return func(client *BaseClient) {
 		client.grpc.timeout = timeout
