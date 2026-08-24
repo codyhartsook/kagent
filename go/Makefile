@@ -60,6 +60,8 @@ fmt: ## Run go fmt.
 vet: ## Run go vet.
 	go vet ./...
 
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
 KAL_SO = $(LOCALBIN)/kube-api-linter.so
 
 .PHONY: lint
@@ -157,8 +159,6 @@ e2e: ## Run end-to-end tests.
 
 ##@ Dependencies
 
-## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
