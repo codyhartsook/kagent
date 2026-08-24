@@ -22,11 +22,12 @@ type Config struct {
 	OutputFormat         string        `mapstructure:"output_format"`
 	Verbose              bool          `mapstructure:"verbose"`
 	Timeout              time.Duration `mapstructure:"timeout"`
+	UserID               string        `mapstructure:"user_id"`
 }
 
 func (c *Config) Client() *kagentclient.ClientSet {
 	options := []kagentclient.ClientOption{
-		kagentclient.WithUserID("admin@kagent.dev"),
+		kagentclient.WithUserID(c.UserID),
 	}
 	if c.KAgentGRPCURL != "" {
 		options = append(options, kagentclient.WithGRPCTarget(c.KAgentGRPCURL))
@@ -68,12 +69,14 @@ func Init() error {
 	viper.SetDefault("output_format", "table")
 	viper.SetDefault("namespace", "kagent")
 	viper.SetDefault("timeout", 300*time.Second)
+	viper.SetDefault("user_id", "admin@kagent.dev")
 	viper.MustBindEnv("kagent_url", "KAGENT_URL")
 	viper.MustBindEnv("kagent_grpc_url", "KAGENT_GRPC_URL")
 	viper.MustBindEnv("kagent_grpc_tls", "KAGENT_GRPC_TLS")
 	viper.MustBindEnv("kagent_grpc_ca_file", "KAGENT_GRPC_CA_FILE")
 	viper.MustBindEnv("kagent_grpc_server_name", "KAGENT_GRPC_SERVER_NAME")
-	viper.MustBindEnv("USER_ID")
+	viper.MustBindEnv("output_format", "KAGENT_OUTPUT_FORMAT")
+	viper.MustBindEnv("user_id", "USER_ID")
 
 	if err := viper.ReadInConfig(); err != nil {
 		// If config file doesn't exist, create it with defaults

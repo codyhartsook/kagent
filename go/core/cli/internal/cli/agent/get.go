@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/kagent-dev/kagent/go/api/database"
 	api "github.com/kagent-dev/kagent/go/api/httpapi"
+	clioutput "github.com/kagent-dev/kagent/go/core/cli/internal/cli/output"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/config"
 	"github.com/kagent-dev/kagent/go/core/internal/utils"
 )
@@ -24,12 +26,12 @@ func GetAgentCmd(cfg *config.Config, resourceName string) {
 			return
 		}
 
-		if len(agentList.Data) == 0 {
+		if len(agentList.Data) == 0 && cfg.OutputFormat == string(clioutput.Table) {
 			fmt.Println("No agents found")
 			return
 		}
 
-		if err := printAgents(agentList.Data); err != nil {
+		if err := printAgents(os.Stdout, cfg.OutputFormat, agentList.Data); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to print agents: %v\n", err)
 			return
 		}
@@ -53,12 +55,12 @@ func GetSessionCmd(cfg *config.Config, resourceName string) {
 			return
 		}
 
-		if len(sessionList.Data) == 0 {
+		if len(sessionList.Data) == 0 && cfg.OutputFormat == string(clioutput.Table) {
 			fmt.Println("No sessions found")
 			return
 		}
 
-		if err := printSessions(sessionList.Data); err != nil {
+		if err := printSessions(os.Stdout, cfg.OutputFormat, sessionList.Data); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to print sessions: %v\n", err)
 			return
 		}
@@ -80,13 +82,13 @@ func GetToolCmd(cfg *config.Config) {
 		fmt.Fprintf(os.Stderr, "Failed to get tools: %v\n", err)
 		return
 	}
-	if err := printTools(toolList); err != nil {
+	if err := printTools(os.Stdout, cfg.OutputFormat, toolList); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to print tools: %v\n", err)
 		return
 	}
 }
 
-func printTools(tools []database.Tool) error {
+func printTools(out io.Writer, format string, tools []database.Tool) error {
 	headers := []string{"#", "NAME", "SERVER_NAME", "DESCRIPTION", "CREATED"}
 	rows := make([][]string, len(tools))
 	for i, tool := range tools {
@@ -99,10 +101,10 @@ func printTools(tools []database.Tool) error {
 		}
 	}
 
-	return printOutput(tools, headers, rows)
+	return printOutput(out, format, tools, headers, rows)
 }
 
-func printAgents(agents []api.AgentResponse) error {
+func printAgents(out io.Writer, format string, agents []api.AgentResponse) error {
 	// Prepare table data
 	headers := []string{"#", "NAME", "CREATED", "DEPLOYMENT_READY", "ACCEPTED"}
 	rows := make([][]string, len(agents))
@@ -116,10 +118,10 @@ func printAgents(agents []api.AgentResponse) error {
 		}
 	}
 
-	return printOutput(agents, headers, rows)
+	return printOutput(out, format, agents, headers, rows)
 }
 
-func printSessions(sessions []*database.Session) error {
+func printSessions(out io.Writer, format string, sessions []*database.Session) error {
 	headers := []string{"#", "ID", "NAME", "AGENT", "CREATED"}
 	rows := make([][]string, len(sessions))
 	for i, session := range sessions {
@@ -140,5 +142,5 @@ func printSessions(sessions []*database.Session) error {
 		}
 	}
 
-	return printOutput(sessions, headers, rows)
+	return printOutput(out, format, sessions, headers, rows)
 }

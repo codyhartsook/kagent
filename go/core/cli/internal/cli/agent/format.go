@@ -1,53 +1,15 @@
 package cli
 
 import (
-	"encoding/json"
-	"fmt"
-	"slices"
+	"io"
 
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/kagent-dev/kagent/go/core/internal/utils"
-	"github.com/spf13/viper"
+	clioutput "github.com/kagent-dev/kagent/go/core/cli/internal/cli/output"
 )
 
-type OutputFormat string
-
-const (
-	OutputFormatJSON  OutputFormat = "json"
-	OutputFormatTable OutputFormat = "table"
-)
-
-func printOutput(data any, tableHeaders []string, tableRows [][]string) error {
-	format := OutputFormat(viper.GetString("output_format"))
-
-	tw := table.NewWriter()
-	headers := slices.Collect(utils.Map(slices.Values(tableHeaders), func(header string) any {
-		return header
-	}))
-	tw.AppendHeader(headers)
-	rows := slices.Collect(utils.Map(slices.Values(tableRows), func(row []string) table.Row {
-		return slices.Collect(utils.Map(slices.Values(row), func(cell string) any {
-			return cell
-		}))
-	}))
-	tw.AppendRows(rows)
-
-	switch format {
-	case OutputFormatJSON:
-		return printJSON(data)
-	case OutputFormatTable:
-		fmt.Println(tw.Render())
-		return nil
-	default:
-		return fmt.Errorf("unknown output format: %s", format)
-	}
-}
-
-func printJSON(data any) error {
-	output, err := json.MarshalIndent(data, "", "  ")
+func printOutput(out io.Writer, format string, data any, tableHeaders []string, tableRows [][]string) error {
+	parsed, err := clioutput.Parse(format)
 	if err != nil {
-		return fmt.Errorf("error formatting JSON: %w", err)
+		return err
 	}
-	fmt.Println(string(output))
-	return nil
+	return clioutput.Write(out, parsed, data, tableHeaders, tableRows, nil)
 }

@@ -44,10 +44,6 @@ type toolResult struct {
 	Response any    `json:"response"`
 }
 
-type artifactBuffer struct {
-	text string
-}
-
 type chatModel struct {
 	agentRef  string
 	sessionID string
@@ -68,8 +64,7 @@ type chatModel struct {
 	cancel    context.CancelFunc
 	streaming bool
 
-	artifacts     map[a2atype.ArtifactID]*artifactBuffer
-	artifactOrder []a2atype.ArtifactID
+	artifacts *clia2a.ArtifactAssembler
 
 	showInput bool
 }
@@ -101,7 +96,7 @@ func newChatModel(agentRef string, sessionID string, send SendMessageFn, verbose
 		send:      send,
 		history:   initial,
 		spin:      sp,
-		artifacts: make(map[a2atype.ArtifactID]*artifactBuffer),
+		artifacts: clia2a.NewArtifactAssembler(),
 		showInput: true,
 	}
 }
@@ -321,58 +316,31 @@ func (m *chatModel) handleStatusMessage(state a2atype.TaskState, msg *a2atype.Me
 	}
 }
 
-// handleArtifactUpdate merges text according to the A2A artifact update
-// contract. Data parts are handled immediately so tool activity is visible
-// even when an artifact has not reached its last chunk.
+// handleArtifactUpdate renders tool activity immediately and assembled text
+// once the artifact is complete.
 func (m *chatModel) handleArtifactUpdate(update *a2atype.TaskArtifactUpdateEvent) {
 	if update == nil || update.Artifact == nil {
 		return
 	}
 
-	// handleMessageParts always processes tool parts; false suppresses text
-	// because text is committed only after the artifact has been assembled.
+	// Tool parts are always processed; false suppresses text until assembled.
 	msg := a2atype.NewMessage(a2atype.MessageRoleAgent, update.Artifact.Parts...)
 	m.handleMessageParts(msg, false)
 
-	text := extractTextFromParts(update.Artifact.Parts)
-	id := update.Artifact.ID
-	buffer, exists := m.artifacts[id]
-	if !exists {
-		buffer = &artifactBuffer{}
-		m.artifacts[id] = buffer
-		m.artifactOrder = append(m.artifactOrder, id)
-	}
-	if update.Append {
-		buffer.text += text
-	} else {
-		buffer.text = text
-	}
-
-	if update.LastChunk {
-		m.commitArtifact(id)
+	if text, done := m.artifacts.Add(update); done {
+		m.commitArtifact(text)
 	}
 }
 
-func (m *chatModel) commitArtifact(id a2atype.ArtifactID) {
-	buffer, ok := m.artifacts[id]
-	if !ok {
-		return
-	}
-	delete(m.artifacts, id)
-	for i, pendingID := range m.artifactOrder {
-		if pendingID == id {
-			m.artifactOrder = append(m.artifactOrder[:i], m.artifactOrder[i+1:]...)
-			break
-		}
-	}
-	if strings.TrimSpace(buffer.text) != "" {
-		m.appendLine(theme.AgentStyle().Render("Agent:") + "\n" + buffer.text)
+func (m *chatModel) commitArtifact(text string) {
+	if strings.TrimSpace(text) != "" {
+		m.appendLine(theme.AgentStyle().Render("Agent:") + "\n" + text)
 	}
 }
 
 func (m *chatModel) flushPendingArtifacts() {
-	for len(m.artifactOrder) > 0 {
-		m.commitArtifact(m.artifactOrder[0])
+	for _, text := range m.artifacts.Flush() {
+		m.commitArtifact(text)
 	}
 }
 
@@ -531,8 +499,7 @@ func (m *chatModel) appendLine(s string) {
 // ResetTranscript clears the viewport with a new header/title.
 func (m *chatModel) ResetTranscript(title string) {
 	m.history = title
-	m.artifacts = make(map[a2atype.ArtifactID]*artifactBuffer)
-	m.artifactOrder = nil
+	m.artifacts.Reset()
 	m.vp.SetContent(m.history)
 	m.vp.GotoBottom()
 }
@@ -540,19 +507,6 @@ func (m *chatModel) ResetTranscript(title string) {
 // SetInputVisible toggles input visibility.
 func (m *chatModel) SetInputVisible(visible bool) {
 	m.showInput = visible
-}
-
-func extractTextFromParts(parts a2atype.ContentParts) string {
-	b := strings.Builder{}
-	for _, p := range parts {
-		if p == nil {
-			continue
-		}
-		if text := p.Text(); text != "" {
-			b.WriteString(text)
-		}
-	}
-	return b.String()
 }
 
 // styles now provided by theme package

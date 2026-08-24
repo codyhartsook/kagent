@@ -43,8 +43,7 @@ func TestChatModelBuffersArtifactDeltasUntilTerminalStatus(t *testing.T) {
 
 	model.appendEvent(a2atype.NewStatusUpdateEvent(reqCtx, a2atype.TaskStateCompleted, nil))
 	require.Contains(t, model.history, "hello")
-	require.Empty(t, model.artifacts)
-	require.Empty(t, model.artifactOrder)
+	require.Empty(t, model.artifacts.Flush())
 }
 
 func TestChatModelArtifactReplacementAndContentBearingLastChunk(t *testing.T) {
@@ -60,7 +59,7 @@ func TestChatModelArtifactReplacementAndContentBearingLastChunk(t *testing.T) {
 
 	require.Contains(t, model.history, "hello")
 	require.NotContains(t, model.history, "helhello", "append=false must replace buffered partial text")
-	require.Empty(t, model.artifacts)
+	require.Empty(t, model.artifacts.Flush())
 
 	// A later terminal status must not display an already-closed artifact again.
 	before := model.history
