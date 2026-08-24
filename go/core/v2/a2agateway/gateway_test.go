@@ -47,6 +47,7 @@ type gatewayTestStore struct {
 	interruptResult       bool
 	interrupted           bool
 	stored                []a2atype.Event
+	storeContextErr       error
 	namespace, id, userID string
 }
 
@@ -59,7 +60,8 @@ func (s *gatewayTestStore) GetRuntimeRevision(context.Context, string) (*dbpkg.R
 	return s.revision, nil
 }
 
-func (s *gatewayTestStore) StoreAgentInstanceTaskEvent(_ context.Context, _ string, task *a2atype.Task, event a2atype.Event) error {
+func (s *gatewayTestStore) StoreAgentInstanceTaskEvent(ctx context.Context, _ string, task *a2atype.Task, event a2atype.Event) error {
+	s.storeContextErr = ctx.Err()
 	if s.taskErr != nil {
 		return s.taskErr
 	}
@@ -142,6 +144,7 @@ type gatewayTestRuntime struct {
 	getTaskCalls   int
 	subscribeEvent a2atype.Event
 	subscribeErr   error
+	streamErr      error
 }
 
 func (r *gatewayTestRuntime) GetTask(context.Context, a2aclient.ServiceParams, *a2atype.GetTaskRequest) (*a2atype.Task, error) {
@@ -168,6 +171,10 @@ func (r *gatewayTestRuntime) SendMessage(_ context.Context, _ a2aclient.ServiceP
 
 func (r *gatewayTestRuntime) SendStreamingMessage(_ context.Context, _ a2aclient.ServiceParams, req *a2atype.SendMessageRequest) iter.Seq2[a2atype.Event, error] {
 	return func(yield func(a2atype.Event, error) bool) {
+		if r.streamErr != nil {
+			yield(nil, r.streamErr)
+			return
+		}
 		yield(&a2atype.Task{ID: req.Message.TaskID, ContextID: req.Message.ContextID, Status: a2atype.TaskStatus{State: a2atype.TaskStateCompleted}}, nil)
 	}
 }
@@ -256,6 +263,28 @@ func TestGatewayClosesRuntimeAfterStreaming(t *testing.T) {
 	}
 	if events != 1 || !runtime.destroyed {
 		t.Fatalf("stream events = %d, destroyed %v", events, runtime.destroyed)
+	}
+}
+
+func TestGatewayRecordsStreamFailureAfterRequestCancellation(t *testing.T) {
+	store := &gatewayTestStore{instance: gatewayTestInstance()}
+	runtime := &gatewayTestRuntime{streamErr: context.Canceled}
+	gateway := New(store, &gatewayTestAuthorizer{}, &gatewayTestDialer{client: gatewayTestClient(t, runtime)}, gatewayTestURL)
+	ctx, cancel := context.WithCancel(gatewayTestContext())
+	cancel()
+
+	sawError := false
+	for _, err := range gateway.SendStreamingMessage(ctx, gatewayTestRequest()) {
+		sawError = sawError || err != nil
+	}
+	if !sawError {
+		t.Fatal("stream returned no runtime error")
+	}
+	if store.storeContextErr != nil {
+		t.Fatalf("failure store context error = %v, want live cleanup context", store.storeContextErr)
+	}
+	if store.task == nil || store.task.Status.State != a2atype.TaskStateFailed {
+		t.Fatalf("stored task = %#v, want failed task", store.task)
 	}
 }
 

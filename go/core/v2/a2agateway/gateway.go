@@ -21,6 +21,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1/pbconv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/google/uuid"
+	apia2a "github.com/kagent-dev/kagent/go/api/a2a"
 	dbpkg "github.com/kagent-dev/kagent/go/api/database"
 	apiv1alpha1 "github.com/kagent-dev/kagent/go/api/gen/kagent/api/v1alpha1"
 	"github.com/kagent-dev/kagent/go/core/pkg/auth"
@@ -32,9 +33,9 @@ import (
 
 const (
 	// AgentInstanceNamespaceHeader selects the Kubernetes namespace containing the AgentInstance.
-	AgentInstanceNamespaceHeader = "x-kagent-agent-instance-namespace"
+	AgentInstanceNamespaceHeader = apia2a.AgentInstanceNamespaceHeader
 	// AgentInstanceIDHeader selects the AgentInstance within that namespace.
-	AgentInstanceIDHeader = "x-kagent-agent-instance-id"
+	AgentInstanceIDHeader = apia2a.AgentInstanceIDHeader
 )
 
 type instanceStore interface {
@@ -557,11 +558,13 @@ func validateTaskInfo(value a2atype.TaskInfoProvider, expected *a2atype.Task) er
 }
 
 func (g *Gateway) failTask(ctx context.Context, instanceID string, task *a2atype.Task) {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	now := time.Now()
 	failed := *task
 	failed.Status = a2atype.TaskStatus{State: a2atype.TaskStateFailed, Timestamp: &now}
-	if err := g.store.StoreAgentInstanceTaskEvent(ctx, instanceID, &failed, &failed); err != nil {
-		ctrllog.FromContext(ctx).Error(err, "failed to record failed AgentInstance task", "task", task.ID)
+	if err := g.store.StoreAgentInstanceTaskEvent(cleanupCtx, instanceID, &failed, &failed); err != nil {
+		ctrllog.FromContext(cleanupCtx).Error(err, "failed to record failed AgentInstance task", "task", task.ID)
 	}
 }
 
