@@ -10,11 +10,15 @@ import (
 	"time"
 
 	cli "github.com/kagent-dev/kagent/go/core/cli/internal/cli/agent"
+	"github.com/kagent-dev/kagent/go/core/cli/internal/cli/agentinstance"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/cli/envdoc"
+	"github.com/kagent-dev/kagent/go/core/cli/internal/cli/invoke"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/cli/mcp"
+	clioutput "github.com/kagent-dev/kagent/go/core/cli/internal/cli/output"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/config"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/profiles"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/tui"
+	"github.com/kagent-dev/kagent/go/core/internal/version"
 	dbcli "github.com/kagent-dev/kagent/go/core/pkg/cli/db"
 	dbmigrate "github.com/kagent-dev/kagent/go/core/pkg/cli/db/migrate"
 	"github.com/kagent-dev/kagent/go/core/pkg/migrations"
@@ -48,7 +52,11 @@ func main() {
 
 	rootCmd := newRootCommand(ctx, cfg)
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if cfg.OutputFormat == string(clioutput.Agent) {
+			_ = clioutput.WriteError(os.Stdout, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 
 		os.Exit(1)
 	}
@@ -63,9 +71,16 @@ func loadConfig() (*config.Config, error) {
 
 func newRootCommand(ctx context.Context, cfg *config.Config) *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "kagent",
-		Short: "kagent is a CLI and TUI for kagent",
-		Long:  "kagent is a CLI and TUI for kagent",
+		Use:           "kagent",
+		Short:         "kagent is a CLI and TUI for kagent",
+		Long:          "kagent is a CLI and TUI for kagent",
+		Version:       version.Version,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		PersistentPreRunE: func(*cobra.Command, []string) error {
+			_, err := clioutput.Parse(cfg.OutputFormat)
+			return err
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			runInteractive(cmd, args, cfg)
 		},
@@ -79,8 +94,15 @@ func newRootCommand(ctx context.Context, cfg *config.Config) *cobra.Command {
 	rootCmd.PersistentFlags().StringVar(&cfg.KAgentGRPCServerName, "kagent-grpc-server-name", cfg.KAgentGRPCServerName, "TLS server name for KAgent gRPC")
 	rootCmd.PersistentFlags().StringVarP(&cfg.Namespace, "namespace", "n", cfg.Namespace, "Namespace")
 	rootCmd.PersistentFlags().StringVarP(&cfg.OutputFormat, "output-format", "o", cfg.OutputFormat, "Output format")
+	rootCmd.PersistentFlags().StringVar(&cfg.OutputFormat, "output", cfg.OutputFormat, "Output format")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.Verbose, "verbose", "v", cfg.Verbose, "Verbose output")
-	rootCmd.PersistentFlags().DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "Timeout")
+	rootCmd.PersistentFlags().DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "Unary request timeout")
+	_ = rootCmd.RegisterFlagCompletionFunc("output-format", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return clioutput.Names(), cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = rootCmd.RegisterFlagCompletionFunc("output", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return clioutput.Names(), cobra.ShellCompDirectiveNoFileComp
+	})
 	installCfg := &cli.InstallCfg{
 		Config: cfg,
 	}
@@ -107,28 +129,7 @@ func newRootCommand(ctx context.Context, cfg *config.Config) *cobra.Command {
 		},
 	}
 
-	invokeCfg := &cli.InvokeCfg{
-		Config: cfg,
-	}
-
-	invokeCmd := &cobra.Command{
-		Use:   "invoke",
-		Short: "Invoke a kagent agent",
-		Long:  `Invoke a kagent agent`,
-		Run: func(cmd *cobra.Command, args []string) {
-			cli.InvokeCmd(cmd.Context(), invokeCfg)
-		},
-		Example: `kagent invoke --agent "k8s-agent" --task "Get all the pods in the kagent namespace"`,
-	}
-
-	invokeCmd.Flags().StringVarP(&invokeCfg.Task, "task", "t", "", "Task")
-	invokeCmd.Flags().StringVarP(&invokeCfg.Session, "session", "s", "", "Session")
-	invokeCmd.Flags().StringVarP(&invokeCfg.Agent, "agent", "a", "", "Agent")
-	invokeCmd.Flags().BoolVarP(&invokeCfg.Stream, "stream", "S", false, "Stream the response")
-	invokeCmd.Flags().StringVarP(&invokeCfg.File, "file", "f", "", "File to read the task from")
-	invokeCmd.Flags().StringVarP(&invokeCfg.URLOverride, "url-override", "u", "", "URL override")
-	invokeCmd.Flags().MarkHidden("url-override") //nolint:errcheck
-	invokeCmd.Flags().StringVar(&invokeCfg.Token, "token", "", "Bearer token to include in A2A requests (for API key passthrough)")
+	invokeCmd := invoke.NewCommand(cfg)
 
 	bugReportCmd := &cobra.Command{
 		Use:   "bug-report",
@@ -177,10 +178,8 @@ func newRootCommand(ctx context.Context, cfg *config.Config) *cobra.Command {
 		Use:   "get",
 		Short: "Get a kagent resource",
 		Long:  `Get a kagent resource`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintf(os.Stderr, "No resource type provided\n\n")
-			cmd.Help() //nolint:errcheck
-			os.Exit(1)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
 		},
 	}
 
@@ -242,7 +241,16 @@ func newRootCommand(ctx context.Context, cfg *config.Config) *cobra.Command {
 		},
 	}
 
-	getCmd.AddCommand(getSessionCmd, getAgentCmd, getToolCmd)
+	getCmd.AddCommand(getSessionCmd, getAgentCmd, getToolCmd, agentinstance.NewGetCommand(cfg))
+
+	createCmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a kagent resource",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	createCmd.AddCommand(agentinstance.NewCreateCommand(cfg))
 
 	initCfg := &cli.InitCfg{
 		Config: cfg,
@@ -460,7 +468,7 @@ Examples:
 	runCmd.Flags().StringVar(&runCfg.ProjectDir, "project-dir", "", "Project directory (default: current directory)")
 	runCmd.Flags().BoolVar(&runCfg.Build, "build", false, "Rebuild the Docker image before running")
 
-	rootCmd.AddCommand(installCmd, uninstallCmd, invokeCmd, bugReportCmd, versionCmd, dashboardCmd, getCmd, initCmd, buildCmd, deployCmd, addMcpCmd, runCmd, mcp.NewMCPCmd(), envdoc.NewEnvCmd(), dbcli.NewCommandFromFunc(migrationSources(cfg)))
+	rootCmd.AddCommand(installCmd, uninstallCmd, invokeCmd, bugReportCmd, versionCmd, dashboardCmd, getCmd, createCmd, initCmd, buildCmd, deployCmd, addMcpCmd, runCmd, mcp.NewMCPCmd(), envdoc.NewEnvCmd(), dbcli.NewCommandFromFunc(migrationSources(cfg)))
 
 	return rootCmd
 }

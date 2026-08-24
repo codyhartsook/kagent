@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/kagent-dev/kagent/go/api/client"
 	"github.com/kagent-dev/kagent/go/api/v1alpha3"
-	clia2a "github.com/kagent-dev/kagent/go/core/cli/internal/a2a"
 	pygen "github.com/kagent-dev/kagent/go/core/cli/internal/agent/frameworks/adk/python"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/agent/frameworks/common"
 	"github.com/kagent-dev/kagent/go/core/cli/internal/config"
@@ -44,69 +42,75 @@ func CheckServerConnection(ctx context.Context, client *client.ClientSet) error 
 	return nil
 }
 
+// Connect returns a reachable API client and its cleanup function.
+func Connect(ctx context.Context, cfg *config.Config) (*client.ClientSet, func(), error) {
+	clientSet := cfg.Client()
+	if err := CheckServerConnection(ctx, clientSet); err == nil {
+		return clientSet, func() { _ = clientSet.Close() }, nil
+	}
+	_ = clientSet.Close()
+	portForward, err := NewPortForward(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	clientSet = cfg.Client()
+	return clientSet, func() {
+		portForward.Stop()
+		_ = clientSet.Close()
+	}, nil
+}
+
+// PortForward manages a kubectl port-forward process.
 type PortForward struct {
 	cmd    *exec.Cmd
 	cancel context.CancelFunc
 }
 
+// NewPortForward starts a controller port-forward and waits until it is reachable.
 func NewPortForward(ctx context.Context, cfg *config.Config) (*PortForward, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(ctx, "kubectl", "-n", cfg.Namespace, "port-forward", "service/kagent-controller", "8083:8083", "8084:8084")
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to start controller port-forward: %w", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
 
-	go func() {
-		if err := cmd.Start(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error starting port-forward: %v\n", err)
-			os.Exit(1)
-		}
-	}()
-
-	client := cfg.Client()
-	var err error
-	for range 10 {
-		err = CheckServerConnection(ctx, client)
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	for {
+		clientSet := cfg.Client()
+		err := CheckServerConnection(ctx, clientSet)
+		_ = clientSet.Close()
 		if err == nil {
-			// Connection successful, port-forward is working
 			return &PortForward{
 				cmd:    cmd,
 				cancel: cancel,
 			}, nil
 		}
 
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case err := <-done:
+			cancel()
+			return nil, fmt.Errorf("controller port-forward exited: %w", err)
+		case <-deadline.C:
+			cancel()
+			return nil, fmt.Errorf("failed to establish connection to kagent-controller: %w", err)
+		case <-ctx.Done():
+			cancel()
+			return nil, fmt.Errorf("waiting for controller port-forward: %w", ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
-
-	cancel()
-	return nil, fmt.Errorf("failed to establish connection to kagent-controller. %w", err)
 }
 
+// Stop terminates the kubectl port-forward process.
 func (p *PortForward) Stop() {
 	p.cancel()
-	// This will terminate the kubectl process in case the cancel does not work.
 	if p.cmd.Process != nil {
 		p.cmd.Process.Kill() //nolint:errcheck
 	}
-
-	// Don't wait for the process - just cancel the context and let it die
-	// The kubectl process will terminate when the context is canceled
-}
-
-func StreamA2AEvents(ch <-chan clia2a.StreamResult, verbose bool) error {
-	_ = verbose
-	defer fmt.Fprintln(os.Stdout)
-
-	for result := range ch {
-		if result.Err != nil {
-			return result.Err
-		}
-
-		json, err := json.Marshal(result.Event)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error marshaling A2A event: %v\n", err)
-			continue
-		}
-		fmt.Fprintf(os.Stdout, "%+v\n", string(json))
-	}
-	return nil
 }
 
 // ResolveProjectDir resolves the project directory to an absolute path

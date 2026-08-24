@@ -70,6 +70,7 @@ func TestRootCommandUsesConfigValuesAsFlagDefaults(t *testing.T) {
 	assert.Equal(t, "grpc.kagent.example.test", rootCmd.PersistentFlags().Lookup("kagent-grpc-server-name").DefValue)
 	assert.Equal(t, "configured-ns", rootCmd.PersistentFlags().Lookup("namespace").DefValue)
 	assert.Equal(t, "json", rootCmd.PersistentFlags().Lookup("output-format").DefValue)
+	assert.Equal(t, "json", rootCmd.PersistentFlags().Lookup("output").DefValue)
 	assert.Equal(t, "true", rootCmd.PersistentFlags().Lookup("verbose").DefValue)
 	assert.Equal(t, "45s", rootCmd.PersistentFlags().Lookup("timeout").DefValue)
 
@@ -79,6 +80,19 @@ func TestRootCommandUsesConfigValuesAsFlagDefaults(t *testing.T) {
 
 	assert.Equal(t, "configured-ns", deployCmd.Flags().Lookup("namespace").DefValue)
 	assert.Equal(t, "configured-ns", cfg.Namespace)
+}
+
+func TestLoadConfigReadsAgentEnvironment(t *testing.T) {
+	resetConfigState(t)
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("KAGENT_OUTPUT_FORMAT", "agent")
+	t.Setenv("USER_ID", "automation@kagent.dev")
+
+	cfg, err := loadConfig()
+	require.NoError(t, err)
+	assert.Equal(t, "agent", cfg.OutputFormat)
+	assert.Equal(t, "automation@kagent.dev", cfg.UserID)
 }
 
 func TestRootCommandFlagsOverrideConfigValues(t *testing.T) {
@@ -99,7 +113,7 @@ func TestRootCommandFlagsOverrideConfigValues(t *testing.T) {
 		"--kagent-grpc-ca-file", "/tmp/flag-ca.pem",
 		"--kagent-grpc-server-name", "grpc.flag.example.test",
 		"--namespace", "flag-ns",
-		"--output-format", "yaml",
+		"--output", "yaml",
 		"--verbose",
 		"--timeout", "10s",
 	}))
