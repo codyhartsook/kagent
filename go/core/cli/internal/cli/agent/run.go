@@ -105,8 +105,8 @@ func RunCmd(ctx context.Context, cfg *RunCfg) error {
 	fmt.Printf("✓ Agent '%s' is running at %s\n", manifest.Name, agentURL)
 	fmt.Println("Launching chat interface...")
 
-	// Generate a new session ID
-	sessionID := a2atype.NewContextID()
+	// Each local run starts a fresh A2A conversation context.
+	contextID := a2atype.NewContextID()
 
 	// Create A2A client for local agent
 	a2aClient, err := clia2a.NewClient(ctx, agentURL, clia2a.ClientOptions{Timeout: cfg.Config.Timeout})
@@ -119,7 +119,7 @@ func RunCmd(ctx context.Context, cfg *RunCfg) error {
 	}
 
 	// Launch TUI chat directly
-	if err := tui.RunChat(manifest.Name, sessionID, sendFn, verbose); err != nil {
+	if err := tui.RunChat(manifest.Name, contextID, sendFn, verbose); err != nil {
 		return fmt.Errorf("chat session failed: %v", err)
 	}
 

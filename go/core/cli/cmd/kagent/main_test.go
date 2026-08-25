@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -271,4 +272,23 @@ func resetConfigState(t *testing.T) {
 		viper.Reset()
 		pflag.CommandLine = oldCommandLine
 	})
+}
+
+func TestRootCommandRequiresTerminalForInteractiveUse(t *testing.T) {
+	cfg := &config.Config{
+		KAgentURL:     config.DefaultKAgentURL,
+		KAgentGRPCURL: config.DefaultKAgentGRPCURL,
+		OutputFormat:  "table",
+		UserID:        config.DefaultUserID,
+	}
+	rootCmd := newRootCommand(t.Context(), cfg)
+	rootCmd.SetArgs(nil)
+	rootCmd.SetIn(&bytes.Buffer{})
+	rootCmd.SetOut(&bytes.Buffer{})
+
+	err := rootCmd.ExecuteContext(t.Context())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "kagent requires a terminal")
+	assert.Contains(t, err.Error(), "kagent invoke")
 }
