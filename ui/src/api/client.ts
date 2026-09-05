@@ -43,6 +43,7 @@ import type {
   AgentTemplate,
   AgentTemplateResource,
 } from "./domain/agentTemplates";
+import type { ResourceCollection } from "./domain/common";
 import type {
   SubstrateActorSortField,
   SubstratePageInput,
@@ -61,7 +62,7 @@ export interface ReadOptions {
 }
 
 export interface ModelsApi {
-  list(options?: ReadOptions): Promise<ModelConfig[]>;
+  list(options?: ReadOptions): Promise<ResourceCollection<ModelConfig>>;
   get(namespace: string, name: string, options?: ReadOptions): Promise<ModelConfig>;
   /** Models on offer, grouped by provider name. */
   providerModels(options?: ReadOptions): Promise<ProviderModelsResponse>;
@@ -135,7 +136,10 @@ export interface AgentBuildingBlocksApi {
    *
    * Served by `HarnessService`; a Harness is the reusable runtime half of an agent.
    */
-  harnesses(namespace?: string, options?: ReadOptions): Promise<Harness[]>;
+  harnesses(
+    namespace?: string,
+    options?: ReadOptions,
+  ): Promise<ResourceCollection<Harness>>;
   /**
    * Creates a harness.
    *
@@ -151,7 +155,10 @@ export interface AgentBuildingBlocksApi {
   /** Deletes a harness. Templates admitted only by it then run nowhere. */
   removeHarness(namespace: string, name: string): Promise<void>;
   /** Every `AgentTemplate` — the behaviour half — in one namespace, or in all of them. */
-  agentTemplates(namespace?: string, options?: ReadOptions): Promise<AgentTemplate[]>;
+  agentTemplates(
+    namespace?: string,
+    options?: ReadOptions,
+  ): Promise<ResourceCollection<AgentTemplate>>;
   /** One agent template, whole, as an edit form needs it. */
   agentTemplate(
     namespace: string,
@@ -292,7 +299,11 @@ export interface KagentApiClient {
 export function createApiClient(): KagentApiClient {
   return {
     models: {
-      list: (options) => invoke("models.list", {}, options).then(sortedByRef),
+      list: (options) =>
+        invoke("models.list", {}, options).then((result) => ({
+          ...result,
+          items: sortedByRef(result.items),
+        })),
       get: (namespace, name, options) =>
         invoke("models.get", { namespace, name }, options),
       providerModels: (options) => invoke("models.providerModels", {}, options),
@@ -341,11 +352,17 @@ export function createApiClient(): KagentApiClient {
 
     agentBuildingBlocks: {
       harnesses: (namespace, options) =>
-        invoke("harnesses.list", { namespace }, options).then(sortedByRef),
+        invoke("harnesses.list", { namespace }, options).then((result) => ({
+          ...result,
+          items: sortedByRef(result.items),
+        })),
       createHarness: (input) => invoke("harnesses.create", input),
       removeHarness: (namespace, name) => invoke("harnesses.delete", { namespace, name }),
       agentTemplates: (namespace, options) =>
-        invoke("agentTemplates.list", { namespace }, options).then(sortedByRef),
+        invoke("agentTemplates.list", { namespace }, options).then((result) => ({
+          ...result,
+          items: sortedByRef(result.items),
+        })),
       agentTemplate: (namespace, name, options) =>
         invoke("agentTemplates.get", { namespace, name }, options),
       createAgentTemplate: (input) => invoke("agentTemplates.create", input),
